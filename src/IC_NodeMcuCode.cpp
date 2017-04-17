@@ -65,16 +65,25 @@ const char* publishSSID = secret_publishSSID; // E.G. Home/LightingGateway/SSID"
 
 // Define state machine states
 typedef enum {
-  s_idle = 0,          // state idle
+  s_idle1 = 0,          // state idle
   s_Output1Start = 1,  // state start
   s_Output1On = 2,     // state on
   s_Output1Stop = 3,   // state stop
-  s_Output2Start = 4,  // state start
-  s_Output2On = 5,     // state on
-  s_Output2Stop = 6,   // state stop
-  s_Output1and2On = 6, // Both outputs on
-} e_state;
-int stateMachine = 0;
+} e_state1;
+int stateMachine1 = 0;
+
+typedef enum {
+  s_idle2 = 0,          // state idle
+  s_Output2Start = 1,  // state start
+  s_Output2On = 2,     // state on
+  s_Output2Stop = 3,   // state stop
+} e_state2;
+int stateMachine2 = 0;
+
+typedef enum {
+  outputOne = 0,
+  outputTwo = 1,
+} irrigationOutputs;
 
 // MQTT instance
 WiFiClient espClient;
@@ -156,24 +165,21 @@ void mqttcallback(char* topic, byte* payload, unsigned int length) {
   // Check the message topic
   String srtTopic = topic;
 
-  // if (srtTopic.equals(secret_publishTemperatureTopic1))
-  // {
-  //   if (targetHeaterTemperature != msgString.toFloat())
-  //   {
-  //     Serial.println("new heater setpoint");
-  //     targetHeaterTemperature = msgString.toFloat();
-  //   }
-  // }
-  // else if (srtTopic.equals(secret_publishTemperatureTopic2))
-  // {
-  //   if (targetCoolerTemperature != msgString.toFloat())
-  //   {
-  //     Serial.println("new cooler setpoint");
-  //     targetCoolerTemperature = msgString.toFloat();
-  //   }
-  // }
+  if (srtTopic.equals(commandTopic1)) {
+    if (msgString == "1"){
+      stateMachine1 = s_Output1Start; // Set output one to be on
+    } else if (msgString == "0"){
+      stateMachine1 = s_Output1Stop; // Set output one to be off
+    }
+  }
 
-
+  else if (srtTopic.equals(commandTopic2)) {
+    if (msgString == "1"){
+      stateMachine2 = s_Output2Start; // Set output one to be on
+    } else if (msgString == "0"){
+      stateMachine2 = s_Output2Stop; // Set output one to be off
+    }
+  }
 }
 
 /*
@@ -254,46 +260,123 @@ void checkMqttConnection() {
   }
 }
 
-void mtqqPublish() {
+// MQTT Publish with normal or immediate option.
+void mtqqPublish(bool ignorePublishInterval) {
 
-  // Only run when publishInterval in milliseonds exspires
+  // Only run when publishInterval in milliseonds expires or ignorePublishInterval == true
   unsigned long currentMillis = millis();
   // CODE TO MOVE TO functions
-  if (currentMillis - previousMillis >= publishInterval) {
+  if (currentMillis - previousMillis >= publishInterval || ignorePublishInterval == true) {
     // save the last time this ran
     previousMillis = currentMillis;
+
     if (mqttClient.connected()) {
-
-      // Publish data
-
       // Publish the Wi-Fi signal quality (RSSI), retained = true
       String tempVar = String(WiFi.RSSI());
       mqttClient.publish(publishSignalStrength, tempVar.c_str(), true);
 
+      // Publish with retained messages
       String strOutputOne = String(outputOnePoweredStatus);
-      if (!mqttClient.publish(publishStateTopic1, strOutputOne.c_str()))
-        Serial.print(F("Failed to output state one to [")), Serial.print(outputOnePoweredStatus), Serial.print("] ");
+      if (!mqttClient.publish(publishStateTopic1, strOutputOne.c_str(), true))
+        Serial.print(F("Failed to output state one to [")), Serial.print(strOutputOne), Serial.print("] ");
       else
-        Serial.print(F("Output one state published to [")), Serial.print(outputOnePoweredStatus), Serial.println("] ");
+        Serial.print(F("Output one state published to [")), Serial.print(strOutputOne), Serial.println("] ");
 
       String strOutputTwo = String(outputTwoPoweredStatus);
-      if (!mqttClient.publish(publishStateTopic2, strOutputTwo.c_str()))
-        Serial.print(F("Failed to output state two to [")), Serial.print(outputTwoPoweredStatus), Serial.print("] ");
+      if (!mqttClient.publish(publishStateTopic2, strOutputTwo.c_str(), true))
+        Serial.print(F("Failed to output state two to [")), Serial.print(strOutputTwo), Serial.print("] ");
       else
-        Serial.print(F("Output two state published to [")), Serial.print(outputTwoPoweredStatus), Serial.println("] ");
-
+        Serial.print(F("Output two state published to [")), Serial.print(strOutputTwo), Serial.println("] ");
     }
   }
 }
 
+void controlOutputOne(bool state){
+  if (state == true) {
+    // Command the output on.
+    Serial.println("controlOutputOne state true");
+    digitalWrite(DIGITAL_PIN_RELAY_ONE, LOW);
+    outputOnePoweredStatus = true;
+  } else {
+    // Command the output on.
+    Serial.println("controlOutputOne state false");
+    digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
+    outputOnePoweredStatus = false;
+  }
+}
+
+void controlOutputTwo(bool state){
+
+
+}
+
+
+// State machines for controller
+void checkState1() {
+  switch (stateMachine1) {
+    case s_idle1:
+      // State is currently: idle
+      break;
+
+    case s_Output1Start:
+      // State is currently: starting
+      Serial.println("State is currently: starting output one");
+
+      // controlOutput(outputOne, true);
+      controlOutputOne(true);
+
+      // // Command the output on.
+      // digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
+      // outputOnePoweredStatus = true;
+
+      mtqqPublish(true); // Immediate publish cycle
+
+      stateMachine1 = s_Output1On;
+
+      break;
+
+    case s_Output1On:
+
+      // State is currently: On
+      // Check if we need to stop, by checking for watchdog.
+
+      // if (!checkHeatRequired(dht.readTemperature(), targetHeaterTemperature, targetHeaterTemperatureHyst))
+      // {
+      //   // Heat no longer required, stop.
+      //   stateMachine = s_HeaterStop;
+      // }
+      break;
+
+    case s_Output1Stop:
+      // State is currently: stopping
+      Serial.println("State is currently: stopping output one");
+      // Command the output off.
+      controlOutputOne(false);
+      // digitalWrite(DIGITAL_PIN_RELAY_ONE, LOW);
+      // outputOnePoweredStatus = false;
+
+      mtqqPublish(true); // Immediate publish cycle
+      // Set state mahcine to idle on the next loop
+      stateMachine1 = s_idle1;
+      break;
+
+
+  }
+}
 
 void setup() {
   // Initialize pins
   pinMode(DIGITAL_PIN_LED_NODEMCU, OUTPUT);
   pinMode(DIGITAL_PIN_LED_ESP, OUTPUT);
+  pinMode(DIGITAL_PIN_RELAY_ONE, OUTPUT);
+  pinMode(DIGITAL_PIN_RELAY_TWO, OUTPUT);
+
   // Initialize pin start values
   digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on HIGH
   digitalWrite(DIGITAL_PIN_LED_ESP, HIGH); // Lights on LOW
+  digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
+  digitalWrite(DIGITAL_PIN_RELAY_TWO, HIGH);
+
   // set serial speed
   Serial.begin(115200);
   Serial.println("Setup Starting");
@@ -315,14 +398,17 @@ void setup() {
 
 
 
+
 /// Main working loop
 void loop() {
-  yield(); // call on the background functions to allow them to do their thing.
-
+  yield(); //call on the background functions to allow them to do their thing.
   // First check if we are connected to the MQTT broker
   checkMqttConnection();
-  yield();  // call on the background functions to allow them to do their thing.
+  //call on the background functions to allow them to do their thing.
+  yield();
+  // Check the status and do actions
+  checkState1();
+  // checkState2();
 
-  // Publish MQTT
-  mtqqPublish();
+  mtqqPublish(false); // Normal publish cycle
 }
