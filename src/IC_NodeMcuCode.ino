@@ -306,7 +306,7 @@ void controlOutputOne(bool state){
 }
 
 void controlOutputTwo(bool state){
-
+  // Do later...
 
 }
 
@@ -314,29 +314,26 @@ void controlOutputTwo(bool state){
 // State machines for controller
 void checkState1() {
   switch (stateMachine1) {
+
     case s_idle1:
       // State is currently: idle
       break;
 
+
     case s_Output1Start:
       // State is currently: starting
       Serial.println("State is currently: starting output one");
-
       // controlOutput(outputOne, true);
       controlOutputOne(true);
-
       // // Command the output on.
       // digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
       // outputOnePoweredStatus = true;
-
       mtqqPublish(true); // Immediate publish cycle
-
       stateMachine1 = s_Output1On;
-
       break;
 
-    case s_Output1On:
 
+    case s_Output1On:
       // State is currently: On
       // Check if we need to stop, by checking for watchdog.
 
@@ -347,6 +344,8 @@ void checkState1() {
       // }
       break;
 
+
+
     case s_Output1Stop:
       // State is currently: stopping
       Serial.println("State is currently: stopping output one");
@@ -354,7 +353,6 @@ void checkState1() {
       controlOutputOne(false);
       // digitalWrite(DIGITAL_PIN_RELAY_ONE, LOW);
       // outputOnePoweredStatus = false;
-
       mtqqPublish(true); // Immediate publish cycle
       // Set state mahcine to idle on the next loop
       stateMachine1 = s_idle1;
