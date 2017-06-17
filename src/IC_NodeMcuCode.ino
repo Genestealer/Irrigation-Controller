@@ -306,8 +306,17 @@ void controlOutputOne(bool state){
 }
 
 void controlOutputTwo(bool state){
-  // Do later...
-
+  if (state == true) {
+    // Command the output on.
+    Serial.println("controlOutputTwo state true");
+    digitalWrite(DIGITAL_PIN_RELAY_TWO, LOW);
+    outputTwoPoweredStatus = true;
+  } else {
+    // Command the output on.
+    Serial.println("controlOutputTwo state false");
+    digitalWrite(DIGITAL_PIN_RELAY_TWO, HIGH);
+    outputTwoPoweredStatus = false;
+  }
 }
 
 
@@ -362,6 +371,48 @@ void checkState1() {
   }
 }
 
+void checkState2() {
+  switch (stateMachine2) {
+
+    case s_idle2:
+      // State is currently: idle
+      break;
+
+
+    case s_Output2Start:
+      // State is currently: starting
+      Serial.println("State is currently: starting output two");
+      controlOutputTwo(true);
+      mtqqPublish(true); // Immediate publish cycle
+      stateMachine2 = s_Output2On;
+      break;
+
+
+    case s_Output2On:
+      // State is currently: On
+      // Check if we need to stop, by checking for watchdog.
+
+      // if (!checkHeatRequired(dht.readTemperature(), targetHeaterTemperature, targetHeaterTemperatureHyst))
+      // {
+      //   // Heat no longer required, stop.
+      //   stateMachine = s_HeaterStop;
+      // }
+      break;
+
+
+
+    case s_Output2Stop:
+      // State is currently: stopping
+      Serial.println("State is currently: stopping output two");
+      // Command the output off.
+      controlOutputTwo(false);
+      mtqqPublish(true); // Immediate publish cycle
+      // Set state mahcine to idle on the next loop
+      stateMachine1 = s_idle2;
+      break;
+  }
+}
+
 void setup() {
   // Initialize pins
   pinMode(DIGITAL_PIN_LED_NODEMCU, OUTPUT);
@@ -406,7 +457,7 @@ void loop() {
   yield();
   // Check the status and do actions
   checkState1();
-  // checkState2();
+  checkState2();
 
   mtqqPublish(false); // Normal publish cycle
 }
