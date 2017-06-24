@@ -17,8 +17,8 @@
   Inputs:
     N/A
   Outputs:
-    Relay one output - pin xx (NodeMCU Pin xx)
-    Relay two output - pin xx (NodeMCU Pin xx)
+    Relay one output - pin 14 (NodeMCU Pin xx)
+    Relay two output - pin 12 (NodeMCU Pin xx)
     LED_NODEMCU - pin 16 (NodeMCU Pin D0)
     LED_ESP - GPIO pin 2 (NodeMCU Pin D4) (Shared with 433Mhz TX)
     ----------
@@ -298,7 +298,7 @@ void controlOutputOne(bool state){
     digitalWrite(DIGITAL_PIN_RELAY_ONE, LOW);
     outputOnePoweredStatus = true;
   } else {
-    // Command the output on.
+    // Command the output off.
     Serial.println("controlOutputOne state false");
     digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
     outputOnePoweredStatus = false;
@@ -312,7 +312,7 @@ void controlOutputTwo(bool state){
     digitalWrite(DIGITAL_PIN_RELAY_TWO, LOW);
     outputTwoPoweredStatus = true;
   } else {
-    // Command the output on.
+    // Command the output off.
     Serial.println("controlOutputTwo state false");
     digitalWrite(DIGITAL_PIN_RELAY_TWO, HIGH);
     outputTwoPoweredStatus = false;
@@ -332,11 +332,8 @@ void checkState1() {
     case s_Output1Start:
       // State is currently: starting
       Serial.println("State is currently: starting output one");
-      // controlOutput(outputOne, true);
+      // Command the output on.
       controlOutputOne(true);
-      // // Command the output on.
-      // digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
-      // outputOnePoweredStatus = true;
       mtqqPublish(true); // Immediate publish cycle
       stateMachine1 = s_Output1On;
       break;
@@ -360,8 +357,6 @@ void checkState1() {
       Serial.println("State is currently: stopping output one");
       // Command the output off.
       controlOutputOne(false);
-      // digitalWrite(DIGITAL_PIN_RELAY_ONE, LOW);
-      // outputOnePoweredStatus = false;
       mtqqPublish(true); // Immediate publish cycle
       // Set state mahcine to idle on the next loop
       stateMachine1 = s_idle1;
@@ -382,6 +377,7 @@ void checkState2() {
     case s_Output2Start:
       // State is currently: starting
       Serial.println("State is currently: starting output two");
+      // Command the output on.
       controlOutputTwo(true);
       mtqqPublish(true); // Immediate publish cycle
       stateMachine2 = s_Output2On;
