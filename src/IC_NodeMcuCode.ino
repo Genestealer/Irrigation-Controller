@@ -496,9 +496,6 @@ void setup() {
   // Call on the background functions to allow them to do their thing
   yield();
   Serial.println("Setup Complete");
-
-
-
 }
 
 
@@ -514,6 +511,7 @@ void loop() {
   checkState2();
 
   mqttPublish(false); // Normal publish cycle
+  
   //call on the background functions to allow them to do their thing.
   yield();
   ArduinoOTA.handle();
