@@ -310,7 +310,7 @@ void checkMqttConnection() {
 
 
 // MQTT Publish with normal or immediate option.
-void mtqqPublish(bool ignorePublishInterval) {
+void mqttPublish(bool ignorePublishInterval) {
 
   // Only run when publishInterval in milliseonds expires or ignorePublishInterval == true
   unsigned long currentMillis = millis();
@@ -384,7 +384,7 @@ void checkState1() {
       Serial.println("State is currently: starting output one");
       // Command the output on.
       controlOutputOne(true);
-      mtqqPublish(true); // Immediate publish cycle
+      mqttPublish(true); // Immediate publish cycle
       stateMachine1 = s_Output1On;
       break;
 
@@ -407,7 +407,7 @@ void checkState1() {
       Serial.println("State is currently: stopping output one");
       // Command the output off.
       controlOutputOne(false);
-      mtqqPublish(true); // Immediate publish cycle
+      mqttPublish(true); // Immediate publish cycle
       // Set state mahcine to idle on the next loop
       stateMachine1 = s_idle1;
       break;
@@ -430,7 +430,7 @@ void checkState2() {
       Serial.println("State is currently: starting output two");
       // Command the output on.
       controlOutputTwo(true);
-      mtqqPublish(true); // Immediate publish cycle
+      mqttPublish(true); // Immediate publish cycle
       stateMachine2 = s_Output2On;
       break;
 
@@ -453,7 +453,7 @@ void checkState2() {
       Serial.println("State is currently: stopping output two");
       // Command the output off.
       controlOutputTwo(false);
-      mtqqPublish(true); // Immediate publish cycle
+      mqttPublish(true); // Immediate publish cycle
       // Set state mahcine to idle on the next loop
       stateMachine2 = s_idle2;
       break;
@@ -482,7 +482,7 @@ void setup() {
   yield();
   // Setup wifi
   setup_wifi();
-  
+
   // Call on the background functions to allow them to do their thing
   yield();
   // Setup OTA updates.
@@ -513,7 +513,7 @@ void loop() {
   checkState1();
   checkState2();
 
-  mtqqPublish(false); // Normal publish cycle
+  mqttPublish(false); // Normal publish cycle
   //call on the background functions to allow them to do their thing.
   yield();
   ArduinoOTA.handle();
