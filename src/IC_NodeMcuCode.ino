@@ -11,6 +11,7 @@
   ----------
   GUI: Locally hosted home assistant
   MQTT: Locally hosted broker https://mosquitto.org/
+  OTA updates
   ----------
   The circuit:
   NodeMCU Amica (ESP8266)
@@ -29,10 +30,12 @@
 ****************************************************/
 
 // Note: Libaries are inluced in "Project Dependencies" file platformio.ini
-#include <ESP8266WiFi.h>  // ESP8266 core for Arduino https://github.com/esp8266/Arduino
+#include <ESP8266WiFi.h>   // ESP8266 core for Arduino https://github.com/esp8266/Arduino
 #include <PubSubClient.h>  // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-#include <private.h> // Passwords etc not for github
-
+#include <private.h>       // Passwords etc not for github
+#include <ESP8266mDNS.h>   // Needed for Over-the-Air ESP8266 programming
+#include <WiFiUdp.h>       // Needed for Over-the-Air ESP8266 programming
+#include <ArduinoOTA.h>    // Needed for Over-the-Air ESP8266 programming
 
 // WiFi parameters
 const char* wifi_ssid = secret_wifi_ssid; // Wifi access point SSID
@@ -110,6 +113,10 @@ bool outputOnePoweredStatus = false;
 bool outputTwoPoweredStatus = false;
 
 
+// Start Code re-use code block
+//##################################################################################
+//##################################################################################
+
 // Setp the connection to WIFI and the MQTT Broker. Normally called only once from setup
 void setup_wifi() {
   /* Explicitly set the ESP8266 to be a WiFi-client, otherwise, it by default,
@@ -137,6 +144,44 @@ void setup_wifi() {
   digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on LOW. Light the NodeMCU LED to show wifi connection.
 }
 
+// Setup Over-the-Air programming, called from the setup.
+// https://www.penninkhof.com/2015/12/1610-over-the-air-esp8266-programming-using-platformio/
+void setup_OTA() {
+
+    // Port defaults to 8266
+    // ArduinoOTA.setPort(8266);
+
+    // Hostname defaults to esp8266-[ChipID]
+    // ArduinoOTA.setHostname("myesp8266");
+
+    // No authentication by default
+    // ArduinoOTA.setPassword("admin");
+    ArduinoOTA.onStart([]() {
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+      else // U_SPIFFS
+        type = "filesystem";
+
+      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      Serial.println("Start updating " + type);
+    });
+    ArduinoOTA.onEnd([]() {
+      Serial.println("\nEnd");
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+    ArduinoOTA.begin();
+}
 
 
 // MQTT payload to transmit via out gateway
@@ -166,17 +211,17 @@ void mqttcallback(char* topic, byte* payload, unsigned int length) {
   String srtTopic = topic;
 
   if (srtTopic.equals(commandTopic1)) {
-    if (msgString == "1"){
+    if (msgString == "1") {
       stateMachine1 = s_Output1Start; // Set output one to be on
-    } else if (msgString == "0"){
+    } else if (msgString == "0") {
       stateMachine1 = s_Output1Stop; // Set output one to be off
     }
   }
 
   else if (srtTopic.equals(commandTopic2)) {
-    if (msgString == "1"){
+    if (msgString == "1") {
       stateMachine2 = s_Output2Start; // Set output one to be on
-    } else if (msgString == "0"){
+    } else if (msgString == "0") {
       stateMachine2 = s_Output2Stop; // Set output one to be off
     }
   }
@@ -259,6 +304,10 @@ void checkMqttConnection() {
     mqttClient.loop();
   }
 }
+// End Code re-use code block
+//##################################################################################
+//##################################################################################
+
 
 // MQTT Publish with normal or immediate option.
 void mtqqPublish(bool ignorePublishInterval) {
@@ -291,7 +340,7 @@ void mtqqPublish(bool ignorePublishInterval) {
   }
 }
 
-void controlOutputOne(bool state){
+void controlOutputOne(bool state) {
   if (state == true) {
     // Command the output on.
     Serial.println("controlOutputOne state true");
@@ -305,7 +354,7 @@ void controlOutputOne(bool state){
   }
 }
 
-void controlOutputTwo(bool state){
+void controlOutputTwo(bool state) {
   if (state == true) {
     // Command the output on.
     Serial.println("controlOutputTwo state true");
@@ -321,6 +370,7 @@ void controlOutputTwo(bool state){
 
 
 // State machines for controller
+// Output 1 State Machine
 void checkState1() {
   switch (stateMachine1) {
 
@@ -366,6 +416,7 @@ void checkState1() {
   }
 }
 
+// Output 2 State Machine
 void checkState2() {
   switch (stateMachine2) {
 
@@ -404,7 +455,7 @@ void checkState2() {
       controlOutputTwo(false);
       mtqqPublish(true); // Immediate publish cycle
       // Set state mahcine to idle on the next loop
-      stateMachine1 = s_idle2;
+      stateMachine2 = s_idle2;
       break;
   }
 }
@@ -431,6 +482,12 @@ void setup() {
   yield();
   // Setup wifi
   setup_wifi();
+  
+  // Call on the background functions to allow them to do their thing
+  yield();
+  // Setup OTA updates.
+  setup_OTA();
+
   // Call on the background functions to allow them to do their thing
   yield();
   // Set MQTT settings
@@ -439,9 +496,10 @@ void setup() {
   // Call on the background functions to allow them to do their thing
   yield();
   Serial.println("Setup Complete");
+
+
+
 }
-
-
 
 
 /// Main working loop
@@ -456,4 +514,7 @@ void loop() {
   checkState2();
 
   mtqqPublish(false); // Normal publish cycle
+  //call on the background functions to allow them to do their thing.
+  yield();
+  ArduinoOTA.handle();
 }
