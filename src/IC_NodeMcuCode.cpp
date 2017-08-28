@@ -8,6 +8,10 @@
   ----------
   Key Libraries:
   ESP8266WiFi.h    https://github.com/esp8266/Arduino
+  ESP8266mDNS.h     https://github.com/esp8266/Arduino/tree/master/libraries/ESP8266mDNS
+  WiFiUdp.h         https://github.com/esp8266/Arduino
+  ArduinoOTA.h      https://github.com/esp8266/Arduino
+  ArduinoJson.h     https://bblanchon.github.io/ArduinoJson/
   ----------
   GUI: Locally hosted home assistant
   MQTT: Locally hosted broker https://mosquitto.org/
@@ -26,45 +30,26 @@
   Notes:
     NodeMCU lED lights to show MQTT conenction.
     ESP lED lights to show WIFI conenction.
-
+    ----------
+   Edits made to the PlatformIO Project Configuration File:
+     platform = espressif8266_stage = https://github.com/esp8266/Arduino/issues/2833 as the standard has an outdated Arduino Core for the ESP8266, ref http://docs.platformio.org/en/latest/platforms/espressif8266.html#over-the-air-ota-update
+     build_flags = -DMQTT_MAX_PACKET_SIZE=512 = Overide max JSON size, until libary is updated to inclde this option https://github.com/knolleary/pubsubclient/issues/110#issuecomment-174953049
+   ----------
+   Sources:
+   https://github.com/mertenats/open-home-automation/tree/master/ha_mqtt_sensor_dht22
+   Create a JSON object
+     Example https://github.com/mertenats/Open-Home-Automation/blob/master/ha_mqtt_sensor_dht22/ha_mqtt_sensor_dht22.ino
+     Doc : https://github.com/bblanchon/ArduinoJson/wiki/API%20Reference
 ****************************************************/
 
 // Note: Libaries are inluced in "Project Dependencies" file platformio.ini
 #include <ESP8266WiFi.h>   // ESP8266 core for Arduino https://github.com/esp8266/Arduino
 #include <PubSubClient.h>  // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
 #include <private.h>       // Passwords etc not for github
-#include <ESP8266mDNS.h>   // Needed for Over-the-Air ESP8266 programming
-#include <WiFiUdp.h>       // Needed for Over-the-Air ESP8266 programming
-#include <ArduinoOTA.h>    // Needed for Over-the-Air ESP8266 programming
-
-// WiFi parameters
-const char* wifi_ssid = secret_wifi_ssid; // Wifi access point SSID
-const char* wifi_password = secret_wifi_password; // Wifi access point password
-
-// MQTT Settings
-const char* mqtt_server = secret_mqtt_server; // E.G. 192.168.1.xx
-const char* clientName = secret_clientName; // Client to report to MQTT
-const char* mqtt_username = secret_mqtt_username; // MQTT Username
-const char* mqtt_password = secret_mqtt_password; // MQTT Password
-boolean willRetain = true; // MQTT Last Will and Testament
-const char* willMessage = "offline"; // MQTT Last Will and Testament Message
-
-// Subscribe
-// The MQTT topic commands are received on to change the switch state.
-const char* commandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
-const char* commandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
-
-// Publish
-// The MQTT topic to publish state updates.
-const char* publishStateTopic1 = secret_stateTopic1; // E.G. Home/Irrigation/OutputState1
-const char* publishStateTopic2 = secret_stateTopic2; // E.G. Home/Irrigation/OutputState2
-
-const char* publishLastWillTopic = secret_publishLastWillTopic; // E.G. Home/LightingGateway/status"
-const char* publishClientName = secret_publishClientName; // E.G. Home/LightingGateway/clientName"
-const char* publishIpAddress = secret_publishIpAddress; // E.G. Home/LightingGateway/IpAddress"
-const char* publishSignalStrength = secret_publishSignalStrength; // E.G. Home/LightingGateway/SignalStrength"
-const char* publishHostName = secret_publishHostName; // E.G. Home/LightingGateway/HostName"
-const char* publishSSID = secret_publishSSID; // E.G. Home/LightingGateway/SSID"
+#include <ESP8266mDNS.h>     // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
+#include <WiFiUdp.h>         // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
+#include <ArduinoOTA.h>      // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
+#include <ArduinoJson.h>     // For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
 
 // Define state machine states
 typedef enum {
@@ -87,6 +72,34 @@ typedef enum {
   outputOne = 0,
   outputTwo = 1,
 } irrigationOutputs;
+
+// WiFi parameters
+const char* wifi_ssid = secret_wifi_ssid; // Wifi access point SSID
+const char* wifi_password = secret_wifi_password; // Wifi access point password
+
+// MQTT Settings
+const char* mqtt_server = secret_mqtt_server; // E.G. 192.168.1.xx
+const char* clientName = secret_clientName; // Client to report to MQTT
+const char* mqtt_username = secret_mqtt_username; // MQTT Username
+const char* mqtt_password = secret_mqtt_password; // MQTT Password
+bool willRetain = true; // MQTT Last Will and Testament
+const char* willMessage = "offline"; // MQTT Last Will and Testament Message
+const int json_buffer_size = 256;
+
+// Subscribe
+// The MQTT topic commands are received on to change the switch state.
+const char* subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
+const char* subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
+
+// Publish
+// The MQTT topic to publish state updates.
+// const char* publishStateTopic1 = secret_stateTopic1; // E.G. Home/Irrigation/OutputState1
+// const char* publishStateTopic2 = secret_stateTopic2; // E.G. Home/Irrigation/OutputState2
+
+const char* publishLastWillTopic = secret_publishLastWillTopic; // E.G. Home/LightingGateway/status"
+
+const char* publishStatusJsonTopic = secret_publishStatusJsonTopic;
+const char* publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic;
 
 // MQTT instance
 WiFiClient espClient;
@@ -111,11 +124,6 @@ float outputTwoDuration = 5;
 // Output powered status
 bool outputOnePoweredStatus = false;
 bool outputTwoPoweredStatus = false;
-
-
-// Start Code re-use code block
-//##################################################################################
-//##################################################################################
 
 // Setp the connection to WIFI and the MQTT Broker. Normally called only once from setup
 void setup_wifi() {
@@ -147,13 +155,10 @@ void setup_wifi() {
 // Setup Over-the-Air programming, called from the setup.
 // https://www.penninkhof.com/2015/12/1610-over-the-air-esp8266-programming-using-platformio/
 void setup_OTA() {
-
     // Port defaults to 8266
     // ArduinoOTA.setPort(8266);
-
     // Hostname defaults to esp8266-[ChipID]
     // ArduinoOTA.setHostname("myesp8266");
-
     // No authentication by default
     // ArduinoOTA.setPassword("admin");
     ArduinoOTA.onStart([]() {
@@ -162,7 +167,6 @@ void setup_OTA() {
         type = "sketch";
       else // U_SPIFFS
         type = "filesystem";
-
       // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
       Serial.println("Start updating " + type);
     });
@@ -183,8 +187,7 @@ void setup_OTA() {
     ArduinoOTA.begin();
 }
 
-
-// MQTT payload to transmit via out gateway
+// MQTT payload
 void mqttcallback(char* topic, byte* payload, unsigned int length) {
   //If you want to publish a message from within the message callback function, it is necessary to make a copy of the topic and payload values as the client uses the same internal buffer for inbound and outbound messages:
   //http://www.hivemq.com/blog/mqtt-client-library-encyclopedia-arduino-pubsubclient/
@@ -195,7 +198,6 @@ void mqttcallback(char* topic, byte* payload, unsigned int length) {
     Serial.print((char)payload[i]);
   }
   Serial.println();
-
 
   // create character buffer with ending null terminator (string)
   int i = 0;
@@ -210,7 +212,7 @@ void mqttcallback(char* topic, byte* payload, unsigned int length) {
   // Check the message topic
   String srtTopic = topic;
 
-  if (srtTopic.equals(commandTopic1)) {
+  if (srtTopic.equals(subscribeCommandTopic1)) {
     if (msgString == "1") {
       stateMachine1 = s_Output1Start; // Set output one to be on
     } else if (msgString == "0") {
@@ -218,7 +220,7 @@ void mqttcallback(char* topic, byte* payload, unsigned int length) {
     }
   }
 
-  else if (srtTopic.equals(commandTopic2)) {
+  else if (srtTopic.equals(subscribeCommandTopic2)) {
     if (msgString == "1") {
       stateMachine2 = s_Output2Start; // Set output one to be on
     } else if (msgString == "0") {
@@ -227,53 +229,61 @@ void mqttcallback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
+void publishNodeState() {
+  // Update status to online, retained = true - last will Message will drop in if we go offline
+  mqttClient.publish(publishLastWillTopic, "online", true);
+  // Gather data
+  char bufIP[16]; // Wifi IP address
+  sprintf(bufIP, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
+  char bufMAC[6]; // Wifi MAC address
+  sprintf(bufMAC, "%02x:%02x:%02x:%02x:%02x:%02x", WiFi.macAddress()[0], WiFi.macAddress()[1], WiFi.macAddress()[2], WiFi.macAddress()[3], WiFi.macAddress()[4], WiFi.macAddress()[5] );
+  // Create and publish the JSON object.
+  StaticJsonBuffer<json_buffer_size> jsonBuffer;
+  JsonObject& root = jsonBuffer.createObject();
+  // INFO: the data must be converted into a string; a problem occurs when using floats...
+  root["ClientName"] = String(clientName);
+  root["IP"] = String(bufIP);
+  root["MAC"] = String(bufMAC);
+  root["RSSI"] = String(WiFi.RSSI());
+  root["HostName"] = String(WiFi.hostname());
+  root["ConnectedSSID"] = String(WiFi.SSID());
+  root.prettyPrintTo(Serial);
+  Serial.println(""); // Add new line as prettyPrintTo leaves the line open.
+  char data[json_buffer_size];
+  root.printTo(data, root.measureLength() + 1);
+  if (!mqttClient.publish(publishNodeHealthJsonTopic, data, true)) // retained = true
+    Serial.print(F("Failed to publish JSON Status to [")), Serial.print(publishNodeHealthJsonTopic), Serial.print("] ");
+  else
+    Serial.print(F("JSON Status Published [")), Serial.print(publishNodeHealthJsonTopic), Serial.println("] ");
+}
+
 /*
   Non-Blocking mqtt reconnect.
   Called from checkMqttConnection.
   Based on example from 5ace47b Sep 7, 2015 https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
 */
 boolean mqttReconnect() {
+  Serial.println("mqttReconnect");
   // Call on the background functions to allow them to do their thing
   yield();
   // Attempt to connect
   if (mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage)) {
-
     Serial.print("Attempting MQTT connection...");
-
-    // Once connected, update status to online, retained = true - last will Message will drop in if we go offline ...
-    mqttClient.publish(publishLastWillTopic, "online", true);
-
-    // Publish device name, retained = true
-    mqttClient.publish(publishClientName, clientName, true);
-
-    // Publish device IP Address, retained = true
-    char buf[16];
-    sprintf(buf, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
-    mqttClient.publish(publishIpAddress, buf, true);
-
-    // Publish the Wi-Fi signal quality (RSSI), retained = true
-    String tempVar = String(WiFi.RSSI());
-    mqttClient.publish(publishSignalStrength, tempVar.c_str(), true);
-
-    // Publish the device DHCP hostname, retained = true
-    mqttClient.publish(publishHostName, WiFi.hostname().c_str(), true);
-
-    // Publish the WiFi SSID, retained = true
-    mqttClient.publish(publishSSID, WiFi.SSID().c_str(), true);
+    // Publish node state data
+    publishNodeState();
 
     // Resubscribe to feeds
-    mqttClient.subscribe(secret_commandTopic1);
-    mqttClient.subscribe(secret_commandTopic2);
+    mqttClient.subscribe(subscribeCommandTopic1);
+    mqttClient.subscribe(subscribeCommandTopic2);
 
-
-    Serial.println("connected");
+    Serial.println("Connected to MQTT server");
 
   } else {
     Serial.print("Failed MQTT connection, rc=");
     Serial.print(mqttClient.state());
-    Serial.println(" try in 1.5 seconds");
+    Serial.println(" try again in 1.5 seconds");
   }
-  return mqttClient.connected();
+  return mqttClient.connected(); // Return connection state
 }
 
 /*
@@ -295,47 +305,57 @@ void checkMqttConnection() {
         lastReconnectAttempt = 0;
       }
     }
-  } else {
+  }
+  else
+  {
     // We are connected.
     digitalWrite(DIGITAL_PIN_LED_ESP, LOW); // Lights on LOW
-    //call on the background functions to allow them to do their thing.
+    // Call on the background functions to allow them to do their thing.
     yield();
     // Client connected: MQTT client loop processing
     mqttClient.loop();
   }
 }
-// End Code re-use code block
-//##################################################################################
-//##################################################################################
-
 
 // MQTT Publish with normal or immediate option.
-void mqttPublish(bool ignorePublishInterval) {
-
+void mqttPublishData(bool ignorePublishInterval) {
   // Only run when publishInterval in milliseonds expires or ignorePublishInterval == true
   unsigned long currentMillis = millis();
-  // CODE TO MOVE TO functions
   if (currentMillis - previousMillis >= publishInterval || ignorePublishInterval == true) {
-    // save the last time this ran
-    previousMillis = currentMillis;
-
+    previousMillis = currentMillis; // Save the last time this ran
     if (mqttClient.connected()) {
-      // Publish the Wi-Fi signal quality (RSSI), retained = true
-      String tempVar = String(WiFi.RSSI());
-      mqttClient.publish(publishSignalStrength, tempVar.c_str(), true);
+      // Publish node state data
+      publishNodeState();
 
-      // Publish with retained messages
-      String strOutputOne = String(outputOnePoweredStatus);
-      if (!mqttClient.publish(publishStateTopic1, strOutputOne.c_str(), true))
-        Serial.print(F("Failed to output state one to [")), Serial.print(strOutputOne), Serial.print("] ");
+      // JSON data method
+      StaticJsonBuffer<json_buffer_size> jsonBuffer;
+      JsonObject& root = jsonBuffer.createObject();
+      // INFO: the data must be converted into a string; a problem occurs when using floats...
+      root["Valve1"] = String(outputOnePoweredStatus);
+      root["Valve2"] = String(outputTwoPoweredStatus);
+          root.prettyPrintTo(Serial);
+      Serial.println(""); // Add new line as prettyPrintTo leaves the line open.
+      char data[json_buffer_size];
+      root.printTo(data, root.measureLength() + 1);
+      if (!mqttClient.publish(publishStatusJsonTopic, data, true))
+        Serial.print(F("Failed to publish JSON sensor data to [")), Serial.print(publishStatusJsonTopic), Serial.print("] ");
       else
-        Serial.print(F("Output one state published to [")), Serial.print(strOutputOne), Serial.println("] ");
+        Serial.print(F("JSON Sensor data published to [")), Serial.print(publishStatusJsonTopic), Serial.println("] ");
 
-      String strOutputTwo = String(outputTwoPoweredStatus);
-      if (!mqttClient.publish(publishStateTopic2, strOutputTwo.c_str(), true))
-        Serial.print(F("Failed to output state two to [")), Serial.print(strOutputTwo), Serial.print("] ");
-      else
-        Serial.print(F("Output two state published to [")), Serial.print(strOutputTwo), Serial.println("] ");
+      Serial.println("JSON Sensor Published");
+
+      // // Publish with retained messages
+      // String strOutputOne = String(outputOnePoweredStatus);
+      // if (!mqttClient.publish(publishStateTopic1, strOutputOne.c_str(), true))
+      //   Serial.print(F("Failed to output state one to [")), Serial.print(strOutputOne), Serial.print("] ");
+      // else
+      //   Serial.print(F("Output one state published to [")), Serial.print(strOutputOne), Serial.println("] ");
+      //
+      // String strOutputTwo = String(outputTwoPoweredStatus);
+      // if (!mqttClient.publish(publishStateTopic2, strOutputTwo.c_str(), true))
+      //   Serial.print(F("Failed to output state two to [")), Serial.print(strOutputTwo), Serial.print("] ");
+      // else
+      //   Serial.print(F("Output two state published to [")), Serial.print(strOutputTwo), Serial.println("] ");
     }
   }
 }
@@ -378,13 +398,12 @@ void checkState1() {
       // State is currently: idle
       break;
 
-
     case s_Output1Start:
       // State is currently: starting
       Serial.println("State is currently: starting output one");
       // Command the output on.
       controlOutputOne(true);
-      mqttPublish(true); // Immediate publish cycle
+      mqttPublishData(true); // Immediate publish cycle
       stateMachine1 = s_Output1On;
       break;
 
@@ -393,26 +412,17 @@ void checkState1() {
       // State is currently: On
       // Check if we need to stop, by checking for watchdog.
 
-      // if (!checkHeatRequired(dht.readTemperature(), targetHeaterTemperature, targetHeaterTemperatureHyst))
-      // {
-      //   // Heat no longer required, stop.
-      //   stateMachine = s_HeaterStop;
-      // }
       break;
-
-
 
     case s_Output1Stop:
       // State is currently: stopping
       Serial.println("State is currently: stopping output one");
       // Command the output off.
       controlOutputOne(false);
-      mqttPublish(true); // Immediate publish cycle
+      mqttPublishData(true); // Immediate publish cycle
       // Set state mahcine to idle on the next loop
       stateMachine1 = s_idle1;
       break;
-
-
   }
 }
 
@@ -424,36 +434,27 @@ void checkState2() {
       // State is currently: idle
       break;
 
-
     case s_Output2Start:
       // State is currently: starting
       Serial.println("State is currently: starting output two");
       // Command the output on.
       controlOutputTwo(true);
-      mqttPublish(true); // Immediate publish cycle
+      mqttPublishData(true); // Immediate publish cycle
       stateMachine2 = s_Output2On;
       break;
-
 
     case s_Output2On:
       // State is currently: On
       // Check if we need to stop, by checking for watchdog.
 
-      // if (!checkHeatRequired(dht.readTemperature(), targetHeaterTemperature, targetHeaterTemperatureHyst))
-      // {
-      //   // Heat no longer required, stop.
-      //   stateMachine = s_HeaterStop;
-      // }
       break;
-
-
 
     case s_Output2Stop:
       // State is currently: stopping
       Serial.println("State is currently: stopping output two");
       // Command the output off.
       controlOutputTwo(false);
-      mqttPublish(true); // Immediate publish cycle
+      mqttPublishData(true); // Immediate publish cycle
       // Set state mahcine to idle on the next loop
       stateMachine2 = s_idle2;
       break;
@@ -477,17 +478,14 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Setup Starting");
 
-
   // Call on the background functions to allow them to do their thing
   yield();
   // Setup wifi
   setup_wifi();
-
   // Call on the background functions to allow them to do their thing
   yield();
   // Setup OTA updates.
   setup_OTA();
-
   // Call on the background functions to allow them to do their thing
   yield();
   // Set MQTT settings
@@ -498,21 +496,25 @@ void setup() {
   Serial.println("Setup Complete");
 }
 
-
-/// Main working loop
+// Main working loop
 void loop() {
-  yield(); //call on the background functions to allow them to do their thing.
+  // Call on the background functions to allow them to do their thing.
+  yield();
   // First check if we are connected to the MQTT broker
   checkMqttConnection();
-  //call on the background functions to allow them to do their thing.
+  // Call on the background functions to allow them to do their thing.
   yield();
   // Check the status and do actions
   checkState1();
   checkState2();
-
-  mqttPublish(false); // Normal publish cycle
-  
-  //call on the background functions to allow them to do their thing.
+  // Publish MQTT
+  mqttPublishData(false); // Normal publish cycle
+  // Call on the background functions to allow them to do their thing.
   yield();
+  // Check for Over The Air updates
   ArduinoOTA.handle();
+
+  // Deal with millis rollover, hack by resetting the esp every 48 days
+  if (millis() > 4147200000)
+    ESP.restart();
 }
