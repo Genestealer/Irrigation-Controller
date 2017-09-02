@@ -7,11 +7,12 @@
     MQTT command message with 'off' payload command one of the outputs off.
   ----------
   Key Libraries:
-  ESP8266WiFi.h    https://github.com/esp8266/Arduino
-  ESP8266mDNS.h     https://github.com/esp8266/Arduino/tree/master/libraries/ESP8266mDNS
-  WiFiUdp.h         https://github.com/esp8266/Arduino
-  ArduinoOTA.h      https://github.com/esp8266/Arduino
-  ArduinoJson.h     https://bblanchon.github.io/ArduinoJson/
+  ESP8266WiFi.h           https://github.com/esp8266/Arduino
+  ESP8266mDNS.h           https://github.com/esp8266/Arduino/tree/master/libraries/ESP8266mDNS
+  WiFiUdp.h               https://github.com/esp8266/Arduino
+  ArduinoOTA.h            https://github.com/esp8266/Arduino
+  ArduinoJson.h           https://bblanchon.github.io/ArduinoJson/
+  I2CSoilMoistureSensor.h https://github.com/Apollon77/I2CSoilMoistureSensor
   ----------
   GUI: Locally hosted home assistant
   MQTT: Locally hosted broker https://mosquitto.org/
@@ -20,12 +21,14 @@
   The circuit:
   NodeMCU Amica (ESP8266)
   Inputs:
-    N/A
+    I2CSoilMoistureSensor https://www.tindie.com/products/miceuz/i2c-soil-moisture-sensor/
+      SCK/SCL   (NodeMCU pin D1)
+      SDA/MOSI  (NodeMCU pin D2)
   Outputs:
-    Relay one output - pin 14 (NodeMCU Pin xx)
-    Relay two output - pin 12 (NodeMCU Pin xx)
-    LED_NODEMCU - pin 16 (NodeMCU Pin D0)
-    LED_ESP - GPIO pin 2 (NodeMCU Pin D4) (Shared with 433Mhz TX)
+    Relay one output - GPIO pin 14 (NodeMCU pin D5)
+    Relay two output - GPIO pin 12 (NodeMCU pin D6)
+    LED_NODEMCU      - GPIO pin 16 (NodeMCU pin D0)
+    LED_ESP          - GPIO pin 2  (NodeMCU pin D4) (Shared with 433Mhz TX)
     ----------
   Notes:
     NodeMCU lED lights to show MQTT conenction.
@@ -43,13 +46,17 @@
 ****************************************************/
 
 // Note: Libaries are inluced in "Project Dependencies" file platformio.ini
-#include <ESP8266WiFi.h>   // ESP8266 core for Arduino https://github.com/esp8266/Arduino
-#include <PubSubClient.h>  // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-#include <private.h>       // Passwords etc not for github
-#include <ESP8266mDNS.h>     // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
-#include <WiFiUdp.h>         // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
-#include <ArduinoOTA.h>      // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
-#include <ArduinoJson.h>     // For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
+#include <ESP8266WiFi.h>           // ESP8266 core for Arduino https://github.com/esp8266/Arduino
+#include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
+#include <private.h>               // Passwords etc not for github
+#include <ESP8266mDNS.h>           // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
+#include <WiFiUdp.h>               // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
+#include <ArduinoOTA.h>            // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
+#include <ArduinoJson.h>           // For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
+#include <I2CSoilMoistureSensor.h> // I2C Soil Moisture Sensor https://github.com/Apollon77/I2CSoilMoistureSensor
+#include <Wire.h>
+#include <Arduino.h>
+
 
 // Define state machine states
 typedef enum {
@@ -109,7 +116,7 @@ long lastReconnectAttempt = 0; // Reconnecting MQTT - non-blocking https://githu
 
 // MQTT publish frequency
 unsigned long previousMillis = 0;
-const long publishInterval = 60000; // Publish requency in milliseconds 60000 = 1 min
+const long publishInterval = 30000; // Publish requency in milliseconds 60000 = 1 min
 
 // LED output parameters
 const int DIGITAL_PIN_LED_ESP = 2; // Define LED on ESP8266 sub-modual
@@ -124,6 +131,11 @@ float outputTwoDuration = 5;
 // Output powered status
 bool outputOnePoweredStatus = false;
 bool outputTwoPoweredStatus = false;
+
+// Create instance of I2CSoilMoistureSensor
+I2CSoilMoistureSensor soilSensor;
+float soilSensorCapacitance = 0;
+float soilSensorTemperature = 0;
 
 // Setp the connection to WIFI and the MQTT Broker. Normally called only once from setup
 void setup_wifi() {
@@ -317,6 +329,25 @@ void checkMqttConnection() {
   }
 }
 
+
+// Read I2C soil sensor and save values ready for next MQTT Publish to server.
+// Return true if values read, else false if not.
+void readSoilSensor() {
+  //Check soilSensor
+  if (!soilSensor.isBusy()) { // Only progress if the sensor is not busy
+    // Read Soil Sensor Capacitance
+    soilSensorCapacitance = soilSensor.getCapacitance(); //read capacitance register
+    Serial.print(F("Soil Moisture Capacitance: ")), Serial.println(soilSensorCapacitance);
+
+    // Read Soil Sensor Temperature
+    soilSensorTemperature = soilSensor.getTemperature() / (float)10; // The returned value is in degrees Celsius with factor 10, so need to divide by 10 to get real value
+    Serial.print(F("Soil Temperature: ")), Serial.println(soilSensorCapacitance);
+
+    // Serial.print(", Light: "); // omitted as it has a 3 second delay, alt: call startMeasureLight then read 3 seconds later.
+    // Serial.println(sensor.getLight(true)); //request light measurement, wait and read light register
+  }
+}
+
 // MQTT Publish with normal or immediate option.
 void mqttPublishData(bool ignorePublishInterval) {
   // Only run when publishInterval in milliseonds expires or ignorePublishInterval == true
@@ -327,13 +358,18 @@ void mqttPublishData(bool ignorePublishInterval) {
       // Publish node state data
       publishNodeState();
 
+      // Read Soil sensor
+      readSoilSensor();
+
       // JSON data method
       StaticJsonBuffer<json_buffer_size> jsonBuffer;
       JsonObject& root = jsonBuffer.createObject();
       // INFO: the data must be converted into a string; a problem occurs when using floats...
       root["Valve1"] = String(outputOnePoweredStatus);
       root["Valve2"] = String(outputTwoPoweredStatus);
-          root.prettyPrintTo(Serial);
+      root["Soil Capacitance"] = String(soilSensorCapacitance);
+      root["Soil Temperature"] = String(soilSensorTemperature);
+      root.prettyPrintTo(Serial);
       Serial.println(""); // Add new line as prettyPrintTo leaves the line open.
       char data[json_buffer_size];
       root.printTo(data, root.measureLength() + 1);
@@ -341,8 +377,6 @@ void mqttPublishData(bool ignorePublishInterval) {
         Serial.print(F("Failed to publish JSON sensor data to [")), Serial.print(publishStatusJsonTopic), Serial.print("] ");
       else
         Serial.print(F("JSON Sensor data published to [")), Serial.print(publishStatusJsonTopic), Serial.println("] ");
-
-      Serial.println("JSON Sensor Published");
 
       // // Publish with retained messages
       // String strOutputOne = String(outputOnePoweredStatus);
@@ -359,6 +393,7 @@ void mqttPublishData(bool ignorePublishInterval) {
     }
   }
 }
+
 
 void controlOutputOne(bool state) {
   if (state == true) {
@@ -474,6 +509,11 @@ void setup() {
   digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
   digitalWrite(DIGITAL_PIN_RELAY_TWO, HIGH);
 
+  // Set I2C for soil sensor
+  Wire.begin();
+  Wire.setClockStretchLimit(2500); // Ensure I2C timing works on ESP8266 https://github.com/Apollon77/I2CSoilMoistureSensor/issues/8
+  soilSensor.begin(); // Reset soil sensor, assumes we give it at least 1 second before talking to it.
+
   // set serial speed
   Serial.begin(115200);
   Serial.println("Setup Starting");
@@ -493,6 +533,11 @@ void setup() {
   mqttClient.setCallback(mqttcallback);
   // Call on the background functions to allow them to do their thing
   yield();
+
+  // Talk to soil sensor
+  Serial.print(F("I2C Soil Moisture Sensor Address: ")), Serial.println(soilSensor.getAddress(),HEX);
+  Serial.print(F("Sensor Firmware version: ")), Serial.println(soilSensor.getVersion(),HEX);
+
   Serial.println("Setup Complete");
 }
 
@@ -509,6 +554,10 @@ void loop() {
   checkState2();
   // Publish MQTT
   mqttPublishData(false); // Normal publish cycle
+
+
+
+
   // Call on the background functions to allow them to do their thing.
   yield();
   // Check for Over The Air updates
