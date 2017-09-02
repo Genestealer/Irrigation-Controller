@@ -124,9 +124,9 @@ const int DIGITAL_PIN_LED_NODEMCU = 16; // Define LED on NodeMCU board - Lights 
 const int DIGITAL_PIN_RELAY_ONE = 14; // Define relay output one
 const int DIGITAL_PIN_RELAY_TWO = 12; // Definerelay output two
 
-// Maximum number of minutes to keep outputs on (Set in code, but modified by web commands, local setpoint in case of internet connection break)
-float outputOneDuration = 5;
-float outputTwoDuration = 5;
+// Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of internet connection break)
+float watchdogDurationTimeSetMillis = 3600000; //60 mins = 3600000 millis
+float watchdogTimeStarted;
 
 // Output powered status
 bool outputOnePoweredStatus = false;
@@ -423,6 +423,16 @@ void controlOutputTwo(bool state) {
   }
 }
 
+bool checkWatchdog() {
+  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis) {
+    // Stop, as we must have lost connection to the server and output has been on too long.
+    Serial.println("checkWatchdog: duration exceeded");
+    return true;
+  }
+  // Else
+  return false;
+}
+
 
 // State machines for controller
 // Output 1 State Machine
@@ -439,14 +449,16 @@ void checkState1() {
       // Command the output on.
       controlOutputOne(true);
       mqttPublishData(true); // Immediate publish cycle
+      // Start watchdog duration timer.
+      watchdogTimeStarted = millis();
       stateMachine1 = s_Output1On;
       break;
 
-
     case s_Output1On:
       // State is currently: On
-      // Check if we need to stop, by checking for watchdog.
-
+      // Check if we need to stop, by checking for watchdog duration timer.
+      if (checkWatchdog())
+        stateMachine1 = s_Output1Stop;
       break;
 
     case s_Output1Stop:
@@ -475,13 +487,16 @@ void checkState2() {
       // Command the output on.
       controlOutputTwo(true);
       mqttPublishData(true); // Immediate publish cycle
+      // Start watchdog duration timer.
+      watchdogTimeStarted = millis();
       stateMachine2 = s_Output2On;
       break;
 
     case s_Output2On:
       // State is currently: On
-      // Check if we need to stop, by checking for watchdog.
-
+      // Check if we need to stop, by checking for watchdog duration timer.
+      if (checkWatchdog())
+        stateMachine2 = s_Output2Stop;
       break;
 
     case s_Output2Stop:
