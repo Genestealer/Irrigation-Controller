@@ -46,9 +46,9 @@
 ****************************************************/
 
 // Note: Libaries are inluced in "Project Dependencies" file platformio.ini
+#include <private.h>               // Passwords etc not for github
 #include <ESP8266WiFi.h>           // ESP8266 core for Arduino https://github.com/esp8266/Arduino
 #include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-#include <private.h>               // Passwords etc not for github
 #include <ESP8266mDNS.h>           // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
 #include <WiFiUdp.h>               // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
 #include <ArduinoOTA.h>            // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
@@ -167,36 +167,36 @@ void setup_wifi() {
 // Setup Over-the-Air programming, called from the setup.
 // https://www.penninkhof.com/2015/12/1610-over-the-air-esp8266-programming-using-platformio/
 void setup_OTA() {
-    // Port defaults to 8266
-    // ArduinoOTA.setPort(8266);
-    // Hostname defaults to esp8266-[ChipID]
-    // ArduinoOTA.setHostname("myesp8266");
-    // No authentication by default
-    // ArduinoOTA.setPassword("admin");
-    ArduinoOTA.onStart([]() {
-      String type;
-      if (ArduinoOTA.getCommand() == U_FLASH)
-        type = "sketch";
-      else // U_SPIFFS
-        type = "filesystem";
-      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.println("Start updating " + type);
-    });
-    ArduinoOTA.onEnd([]() {
-      Serial.println("\nEnd");
-    });
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    });
-    ArduinoOTA.onError([](ota_error_t error) {
-      Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed");
-    });
-    ArduinoOTA.begin();
+  // Port defaults to 8266
+  // ArduinoOTA.setPort(8266);
+  // Hostname defaults to esp8266-[ChipID]
+  // ArduinoOTA.setHostname("myesp8266");
+  // No authentication by default
+  // ArduinoOTA.setPassword("admin");
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH)
+      type = "sketch";
+    else // U_SPIFFS
+      type = "filesystem";
+    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+    Serial.println("Start updating " + type);
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  ArduinoOTA.begin();
 }
 
 // MQTT payload
@@ -269,6 +269,14 @@ void publishNodeState() {
     Serial.print(F("JSON Status Published [")), Serial.print(publishNodeHealthJsonTopic), Serial.println("] ");
 }
 
+
+// Subscribe to MQTT topics
+void mqttSubscribe() {
+  mqttClient.subscribe(subscribeCommandTopic1);
+  mqttClient.subscribe(subscribeCommandTopic2);
+}
+
+
 /*
   Non-Blocking mqtt reconnect.
   Called from checkMqttConnection.
@@ -283,13 +291,9 @@ boolean mqttReconnect() {
     Serial.print("Attempting MQTT connection...");
     // Publish node state data
     publishNodeState();
-
     // Resubscribe to feeds
-    mqttClient.subscribe(subscribeCommandTopic1);
-    mqttClient.subscribe(subscribeCommandTopic2);
-
+    mqttSubscribe();
     Serial.println("Connected to MQTT server");
-
   } else {
     Serial.print("Failed MQTT connection, rc=");
     Serial.print(mqttClient.state());
@@ -317,9 +321,7 @@ void checkMqttConnection() {
         lastReconnectAttempt = 0;
       }
     }
-  }
-  else
-  {
+  } else {
     // We are connected.
     digitalWrite(DIGITAL_PIN_LED_ESP, LOW); // Lights on LOW
     // Call on the background functions to allow them to do their thing.
@@ -367,8 +369,8 @@ void mqttPublishData(bool ignorePublishInterval) {
       // INFO: the data must be converted into a string; a problem occurs when using floats...
       root["Valve1"] = String(outputOnePoweredStatus);
       root["Valve2"] = String(outputTwoPoweredStatus);
-      root["Soil Capacitance"] = String(soilSensorCapacitance);
-      root["Soil Temperature"] = String(soilSensorTemperature);
+      root["SoilCapacitance"] = String(soilSensorCapacitance);
+      root["SoilTemperature"] = String(soilSensorTemperature);
       root.prettyPrintTo(Serial);
       Serial.println(""); // Add new line as prettyPrintTo leaves the line open.
       char data[json_buffer_size];
@@ -511,28 +513,11 @@ void checkState2() {
   }
 }
 
-void setup() {
-  // Initialize pins
-  pinMode(DIGITAL_PIN_LED_NODEMCU, OUTPUT);
-  pinMode(DIGITAL_PIN_LED_ESP, OUTPUT);
-  pinMode(DIGITAL_PIN_RELAY_ONE, OUTPUT);
-  pinMode(DIGITAL_PIN_RELAY_TWO, OUTPUT);
-
-  // Initialize pin start values
-  digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on HIGH
-  digitalWrite(DIGITAL_PIN_LED_ESP, HIGH); // Lights on LOW
-  digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
-  digitalWrite(DIGITAL_PIN_RELAY_TWO, HIGH);
-
-  // Set I2C for soil sensor
-  Wire.begin();
-  Wire.setClockStretchLimit(2500); // Ensure I2C timing works on ESP8266 https://github.com/Apollon77/I2CSoilMoistureSensor/issues/8
-  soilSensor.begin(); // Reset soil sensor, assumes we give it at least 1 second before talking to it.
-
-  // set serial speed
+// Standard setup shared across programs.
+void standardSetup() {
+    // Set serial speed
   Serial.begin(115200);
   Serial.println("Setup Starting");
-
   // Call on the background functions to allow them to do their thing
   yield();
   // Setup wifi
@@ -541,44 +526,101 @@ void setup() {
   yield();
   // Setup OTA updates.
   setup_OTA();
+
+  // Initialize pins
+  pinMode(DIGITAL_PIN_LED_NODEMCU, OUTPUT);
+  pinMode(DIGITAL_PIN_LED_ESP, OUTPUT);
+  // Initialize pin start values
+  digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on HIGH
+  digitalWrite(DIGITAL_PIN_LED_ESP, HIGH); // Lights on LOW
+
+  // Set MQTT settings
+  mqttClient.setServer(mqtt_server, 1883);
+  mqttClient.setCallback(mqttcallback);
   // Call on the background functions to allow them to do their thing
   yield();
+}
+
+// Custom setup for this program.
+void customSetup() {
+  // Initialize pins
+  pinMode(DIGITAL_PIN_RELAY_ONE, OUTPUT);
+  pinMode(DIGITAL_PIN_RELAY_TWO, OUTPUT);
+
+  // Initialize pin start values
+  digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
+  digitalWrite(DIGITAL_PIN_RELAY_TWO, HIGH);
+
+  // Set I2C for soil sensor
+  Wire.begin();
+  Wire.setClockStretchLimit(2500); // Ensure I2C timing works on ESP8266 https://github.com/Apollon77/I2CSoilMoistureSensor/issues/8
+  soilSensor.begin(); // Reset soil sensor, assumes we give it at least 1 second before talking to it.
+
+  // Talk to soil sensor
+  Serial.print(F("I2C Soil Moisture Sensor Address: ")), Serial.println(soilSensor.getAddress(), HEX);
+  Serial.print(F("Sensor Firmware version: ")), Serial.println(soilSensor.getVersion(), HEX);
+}
+
+void setup() {
+  // Set serial speed
+  Serial.begin(115200);
+  Serial.println("Setup Starting");
+  // Call on the background functions to allow them to do their thing
+  yield();
+  // Setup wifi
+  setup_wifi();
+  // Call on the background functions to allow them to do their thing
+  yield();
+  // Setup OTA updates.
+  setup_OTA();
+
+  // Initialize pins
+  pinMode(DIGITAL_PIN_LED_NODEMCU, OUTPUT);
+  pinMode(DIGITAL_PIN_LED_ESP, OUTPUT);
+  // Initialize pin start values
+  digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on HIGH
+  digitalWrite(DIGITAL_PIN_LED_ESP, HIGH); // Lights on LOW
+
   // Set MQTT settings
   mqttClient.setServer(mqtt_server, 1883);
   mqttClient.setCallback(mqttcallback);
   // Call on the background functions to allow them to do their thing
   yield();
 
-  // Talk to soil sensor
-  Serial.print(F("I2C Soil Moisture Sensor Address: ")), Serial.println(soilSensor.getAddress(),HEX);
-  Serial.print(F("Sensor Firmware version: ")), Serial.println(soilSensor.getVersion(),HEX);
-
+  // Loop for this project.
+  customSetup();
   Serial.println("Setup Complete");
+}
+
+// Custom loop for this program.
+void customLoop(){
+  // Call on the background functions to allow them to do their thing.
+  yield();
+  // Check the status and do actions
+  checkState1();
+  checkState2();
 }
 
 // Main working loop
 void loop() {
   // Call on the background functions to allow them to do their thing.
   yield();
-  // First check if we are connected to the MQTT broker
-  checkMqttConnection();
+  // Check for Over The Air updates
+  ArduinoOTA.handle();
   // Call on the background functions to allow them to do their thing.
   yield();
-  // Check the status and do actions
-  checkState1();
-  checkState2();
+  // First check if we are connected to the MQTT broker
+  checkMqttConnection();
   // Publish MQTT
   mqttPublishData(false); // Normal publish cycle
-
-
-
-
   // Call on the background functions to allow them to do their thing.
   yield();
   // Check for Over The Air updates
   ArduinoOTA.handle();
-
   // Deal with millis rollover, hack by resetting the esp every 48 days
   if (millis() > 4147200000)
     ESP.restart();
+
+  // Loop for this project.
+  customLoop();
 }
