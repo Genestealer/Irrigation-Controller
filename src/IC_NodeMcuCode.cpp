@@ -1,10 +1,12 @@
 /***************************************************
   Irrigation Controller
-  Richard Huish 2017
+  Richard Huish 2017-2018
   ESP8266 based with local home-assistant.io GUI,
     relay output for dual irrigation control via MQTT
     MQTT command message with 'on' payload command one of the outputs on.
     MQTT command message with 'off' payload command one of the outputs off.
+  ----------
+  Github: https://github.com/Genestealer/Irrigation-Controller
   ----------
   Key Libraries:
   ESP8266WiFi.h           https://github.com/esp8266/Arduino
@@ -28,11 +30,11 @@
     Relay one output - GPIO pin 14 (NodeMCU pin D5)
     Relay two output - GPIO pin 12 (NodeMCU pin D6)
     LED_NODEMCU      - GPIO pin 16 (NodeMCU pin D0)
-    LED_ESP          - GPIO pin 2  (NodeMCU pin D4) (Shared with 433Mhz TX)
+    LED_ESP          - GPIO pin 2  (NodeMCU pin D4)
     ----------
   Notes:
-    NodeMCU lED lights to show MQTT conenction.
-    ESP lED lights to show WIFI conenction.
+    NodeMCU lED lights to show MQTT connection.
+    ESP lED lights to show WIFI connection.
     ----------
    Edits made to the PlatformIO Project Configuration File:
      platform = espressif8266_stage = https://github.com/esp8266/Arduino/issues/2833 as the standard has an outdated Arduino Core for the ESP8266, ref http://docs.platformio.org/en/latest/platforms/espressif8266.html#over-the-air-ota-update
@@ -57,6 +59,42 @@
 #include <Wire.h>
 #include <Arduino.h>
 
+// WiFi parameters
+const char* wifi_ssid = secret_wifi_ssid; // Wifi access point SSID
+const char* wifi_password = secret_wifi_password; // Wifi access point password
+int noWifiConnectionCount = 0;
+const int noWifiConnectionCountLimit = 5;
+int noWifiConnectionCountRebootCount = 0;
+const int noWifiConnectionCountRebootLimit = 5;
+
+// MQTT Settings
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+char message_buff[100];
+long lastReconnectAttempt = 0; // Reconnecting MQTT - non-blocking https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
+const char* mqtt_server = secret_mqtt_server; // E.G. 192.168.1.xx
+const char* clientName = secret_clientName; // Client to report to MQTT
+const char* mqtt_username = secret_mqtt_username; // MQTT Username
+const char* mqtt_password = secret_mqtt_password; // MQTT Password
+bool willRetain = true; // MQTT Last Will and Testament
+const char* willMessage = "offline"; // MQTT Last Will and Testament Message
+const int json_buffer_size = 256;
+int noMqttConnectionCount = 0;
+const int noMqttConnectionCountLimit = 5;
+// MQTT Subscribe
+const char* subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
+const char* subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
+// MQTT Publish
+const char* publishLastWillTopic = secret_publishLastWillTopic;              // MQTT last will
+const char* publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic;  // State of the node
+const char* publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic;  // Health of the node
+// MQTT publish frequency
+unsigned long previousMillis = 0;
+const long publishInterval = 30000; // Publish frequency in milliseconds 60000 = 1 min
+
+// LED output parameters
+const int DIGITAL_PIN_LED_ESP = 2; // Define LED on ESP8266 sub-modual
+const int DIGITAL_PIN_LED_NODEMCU = 16; // Define LED on NodeMCU board - Lights on pin LOW
 
 // Define state machine states
 typedef enum {
@@ -80,53 +118,13 @@ typedef enum {
   outputTwo = 1,
 } irrigationOutputs;
 
-// WiFi parameters
-const char* wifi_ssid = secret_wifi_ssid; // Wifi access point SSID
-const char* wifi_password = secret_wifi_password; // Wifi access point password
-
-// MQTT Settings
-const char* mqtt_server = secret_mqtt_server; // E.G. 192.168.1.xx
-const char* clientName = secret_clientName; // Client to report to MQTT
-const char* mqtt_username = secret_mqtt_username; // MQTT Username
-const char* mqtt_password = secret_mqtt_password; // MQTT Password
-bool willRetain = true; // MQTT Last Will and Testament
-const char* willMessage = "offline"; // MQTT Last Will and Testament Message
-const int json_buffer_size = 256;
-
-// Subscribe
-// The MQTT topic commands are received on to change the switch state.
-const char* subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
-const char* subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
-
-// Publish
-// The MQTT topic to publish state updates.
-// const char* publishStateTopic1 = secret_stateTopic1; // E.G. Home/Irrigation/OutputState1
-// const char* publishStateTopic2 = secret_stateTopic2; // E.G. Home/Irrigation/OutputState2
-
-const char* publishLastWillTopic = secret_publishLastWillTopic; // E.G. Home/LightingGateway/status"
-
-const char* publishStatusJsonTopic = secret_publishStatusJsonTopic;
-const char* publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic;
-
-// MQTT instance
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
-char message_buff[100];
-long lastReconnectAttempt = 0; // Reconnecting MQTT - non-blocking https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
-
-// MQTT publish frequency
-unsigned long previousMillis = 0;
-const long publishInterval = 30000; // Publish requency in milliseconds 60000 = 1 min
-
-// LED output parameters
-const int DIGITAL_PIN_LED_ESP = 2; // Define LED on ESP8266 sub-modual
-const int DIGITAL_PIN_LED_NODEMCU = 16; // Define LED on NodeMCU board - Lights on pin LOW
-const int DIGITAL_PIN_RELAY_ONE = 14; // Define relay output one
-const int DIGITAL_PIN_RELAY_TWO = 12; // Definerelay output two
-
 // Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of internet connection break)
 float watchdogDurationTimeSetMillis = 3600000; //60 mins = 3600000 millis
 float watchdogTimeStarted;
+
+// Relay output pins
+const int DIGITAL_PIN_RELAY_ONE = 14; // Define relay output one
+const int DIGITAL_PIN_RELAY_TWO = 12; // Definerelay output two
 
 // Output powered status
 bool outputOnePoweredStatus = false;
@@ -137,31 +135,57 @@ I2CSoilMoistureSensor soilSensor;
 float soilSensorCapacitance = 0;
 float soilSensorTemperature = 0;
 
-// Setp the connection to WIFI and the MQTT Broker. Normally called only once from setup
+// Setup the connection to WIFI. Normally called only once from setup
 void setup_wifi() {
   /* Explicitly set the ESP8266 to be a WiFi-client, otherwise, it by default,
      would try to act as both a client and an access-point and could cause
      network-issues with your other WiFi-devices on your WiFi-network. */
   WiFi.mode(WIFI_STA);
-
   // Connect to the WiFi network
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.print(wifi_ssid);
+  Serial.println("Connecting to " + String(wifi_ssid) + "...");
   WiFi.begin(wifi_ssid, wifi_password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(250);
-    Serial.print(".");
+  while ((WiFi.status() != WL_CONNECTED) && (noWifiConnectionCount < noWifiConnectionCountLimit)) {
+    delay(500);
+    noWifiConnectionCount = ++noWifiConnectionCount; //Increment the counter
+    Serial.print("Wifi connection attempt number: ");
+    Serial.println(noWifiConnectionCount);
   }
-  Serial.print("");
-  Serial.println("WiFi connected");
+  if (WiFi.status() != WL_CONNECTED) {
+    // If no wifi, fall-back to local mode with pre-set values.
+    Serial.println("WiFi not connected. Running in Local Mode!");
+  } else {
+    Serial.println("WiFi connected");
 
-  Serial.printf("RSSI: %d dBm\n", WiFi.RSSI());
-  Serial.print("Connected, IP address: ");
-  Serial.println(WiFi.localIP());
-  Serial.printf("Hostname: %s\n", WiFi.hostname().c_str());
+    Serial.printf("RSSI: %d dBm\n", WiFi.RSSI());
+    Serial.println("IP address: " + String(WiFi.localIP()));
+    Serial.printf("Hostname: %s\n", WiFi.hostname().c_str());
 
-  digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on LOW. Light the NodeMCU LED to show wifi connection.
+    digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on LOW. Light the NodeMCU LED to show wifi connection.
+  }
+}
+
+// If disconnected from Wifi, and attempt reconnection.
+// Code source: https://github.com/alukach/Amazon-Alexa-RF-Outlets-Integration/blob/master/wemos.ino
+bool reconnectWifi() {
+  Serial.println("Disconnected; Attempting reconnect to " + String(wifi_ssid) + "...");
+  WiFi.disconnect();
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(wifi_ssid, wifi_password);
+  // Output reconnection status info every second over the next 10 sec
+  for ( int i = 0; i < 10 ; i++ )  {
+    delay(500);
+    Serial.print("WiFi status = ");
+    if ( WiFi.status() == WL_CONNECTED ) {
+      Serial.println("Connected");
+      return true;
+    } else {
+      Serial.println("Disconnected");
+    }
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Failure to establish connection after 10 sec. Returning to Local Mode");
+    return false;
+  }
 }
 
 // Setup Over-the-Air programming, called from the setup.
@@ -199,49 +223,8 @@ void setup_OTA() {
   ArduinoOTA.begin();
 }
 
-// MQTT payload
-void mqttcallback(char* topic, byte* payload, unsigned int length) {
-  //If you want to publish a message from within the message callback function, it is necessary to make a copy of the topic and payload values as the client uses the same internal buffer for inbound and outbound messages:
-  //http://www.hivemq.com/blog/mqtt-client-library-encyclopedia-arduino-pubsubclient/
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
-
-  // create character buffer with ending null terminator (string)
-  int i = 0;
-  for (i = 0; i < length; i++) {
-    message_buff[i] = payload[i];
-  }
-  message_buff[i] = '\0';
-  // Check the value of the message
-  String msgString = String(message_buff);
-  Serial.println(msgString);
-
-  // Check the message topic
-  String srtTopic = topic;
-
-  if (srtTopic.equals(subscribeCommandTopic1)) {
-    if (msgString == "1") {
-      stateMachine1 = s_Output1Start; // Set output one to be on
-    } else if (msgString == "0") {
-      stateMachine1 = s_Output1Stop; // Set output one to be off
-    }
-  }
-
-  else if (srtTopic.equals(subscribeCommandTopic2)) {
-    if (msgString == "1") {
-      stateMachine2 = s_Output2Start; // Set output one to be on
-    } else if (msgString == "0") {
-      stateMachine2 = s_Output2Stop; // Set output one to be off
-    }
-  }
-}
-
-void publishNodeState() {
+// Publish this nodes state via MQTT
+void publishNodeHealth() {
   // Update status to online, retained = true - last will Message will drop in if we go offline
   mqttClient.publish(publishLastWillTopic, "online", true);
   // Gather data
@@ -264,18 +247,16 @@ void publishNodeState() {
   char data[json_buffer_size];
   root.printTo(data, root.measureLength() + 1);
   if (!mqttClient.publish(publishNodeHealthJsonTopic, data, true)) // retained = true
-    Serial.print(F("Failed to publish JSON Status to [")), Serial.print(publishNodeHealthJsonTopic), Serial.print("] ");
+    Serial.println("Failed to publish JSON Node Health to [" + String(publishNodeHealthJsonTopic) + "]");
   else
-    Serial.print(F("JSON Status Published [")), Serial.print(publishNodeHealthJsonTopic), Serial.println("] ");
+    Serial.println("JSON Node Health Published [" + String(publishNodeHealthJsonTopic) + "]");
 }
-
 
 // Subscribe to MQTT topics
 void mqttSubscribe() {
   mqttClient.subscribe(subscribeCommandTopic1);
   mqttClient.subscribe(subscribeCommandTopic2);
 }
-
 
 /*
   Non-Blocking mqtt reconnect.
@@ -290,14 +271,12 @@ boolean mqttReconnect() {
   if (mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage)) {
     Serial.print("Attempting MQTT connection...");
     // Publish node state data
-    publishNodeState();
+    publishNodeHealth();
     // Resubscribe to feeds
     mqttSubscribe();
     Serial.println("Connected to MQTT server");
   } else {
-    Serial.print("Failed MQTT connection, rc=");
-    Serial.print(mqttClient.state());
-    Serial.println(" try again in 1.5 seconds");
+    Serial.println("Failed MQTT connection, rc=" + String(publishNodeStatusJsonTopic) + "] ");
   }
   return mqttClient.connected(); // Return connection state
 }
@@ -308,6 +287,8 @@ boolean mqttReconnect() {
   its connection, it attempts to reconnect every 5 seconds
   without blocking the main loop.
   Called from main loop.
+  If MQTT connection fails after x attempts it tries to reconnect wifi
+  If wifi connections fails after x attempts it reboots the esp
 */
 void checkMqttConnection() {
   if (!mqttClient.connected()) {
@@ -318,21 +299,44 @@ void checkMqttConnection() {
       lastReconnectAttempt = now;
       // Attempt to reconnect
       if (mqttReconnect()) {
+        // We are connected.
         lastReconnectAttempt = 0;
+        noMqttConnectionCount = 0;
+        noWifiConnectionCountRebootCount = 0;
+        digitalWrite(DIGITAL_PIN_LED_ESP, LOW); // Lights on LOW
+      } else  {
+        // Connection to MQTT failed.
+        // If no connection after x attempts, then reconnect wifi, if no connection after x attempts reboot.
+        noMqttConnectionCount = ++noMqttConnectionCount; //Increment the counter
+        Serial.println("MQTT connection attempt number: " + String(noMqttConnectionCount));
+        if (noMqttConnectionCount > noMqttConnectionCountLimit) {
+          // Max MQTT connection attempts reached, reconnect wifi.
+          noMqttConnectionCount = 0; // Reset MQTT connection attempt counter.
+          Serial.println("MQTT connection count limit reached, reconnecting wifi");
+          // Try to reconnect wifi, if this fails after x attemps then reboot.
+          if (!reconnectWifi()) {
+            noWifiConnectionCountRebootCount = ++noWifiConnectionCountRebootCount;
+            Serial.println("Wifi connection attempt number: " + String(noWifiConnectionCountRebootCount));
+            if (noWifiConnectionCountRebootCount > noWifiConnectionCountRebootLimit) {
+              Serial.println("Wifi re-connection count limit reached, reboot esp");
+              // Reboot ESP
+              ESP.restart();
+            }
+          }
+        }
       }
+
+
     }
   } else {
-    // We are connected.
-    digitalWrite(DIGITAL_PIN_LED_ESP, LOW); // Lights on LOW
-    // Call on the background functions to allow them to do their thing.
+    //Call on the background functions to allow them to do their thing.
     yield();
     // Client connected: MQTT client loop processing
     mqttClient.loop();
   }
 }
 
-
-// Read I2C soil sensor and save values ready for next MQTT Publish to server.
+// Read I2C soil sensor and save values ready for next publish to server.
 // Return true if values read, else false if not.
 void readSoilSensor() {
   //Check soilSensor
@@ -351,14 +355,15 @@ void readSoilSensor() {
 }
 
 // MQTT Publish with normal or immediate option.
-void mqttPublishData(bool ignorePublishInterval) {
-  // Only run when publishInterval in milliseonds expires or ignorePublishInterval == true
+void mqttPublishStatusData(bool ignorePublishInterval) {
+  // Only run when publishInterval in milliseconds expires or ignorePublishInterval == true
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis >= publishInterval || ignorePublishInterval == true) {
     previousMillis = currentMillis; // Save the last time this ran
+    // Check connection to MQTT server
     if (mqttClient.connected()) {
       // Publish node state data
-      publishNodeState();
+      publishNodeHealth();
 
       // Read Soil sensor
       readSoilSensor();
@@ -367,18 +372,20 @@ void mqttPublishData(bool ignorePublishInterval) {
       StaticJsonBuffer<json_buffer_size> jsonBuffer;
       JsonObject& root = jsonBuffer.createObject();
       // INFO: the data must be converted into a string; a problem occurs when using floats...
+
       root["Valve1"] = String(outputOnePoweredStatus);
       root["Valve2"] = String(outputTwoPoweredStatus);
       root["SoilCapacitance"] = String(soilSensorCapacitance);
       root["SoilTemperature"] = String(soilSensorTemperature);
+
       root.prettyPrintTo(Serial);
       Serial.println(""); // Add new line as prettyPrintTo leaves the line open.
       char data[json_buffer_size];
       root.printTo(data, root.measureLength() + 1);
-      if (!mqttClient.publish(publishStatusJsonTopic, data, true))
-        Serial.print(F("Failed to publish JSON sensor data to [")), Serial.print(publishStatusJsonTopic), Serial.print("] ");
+      if (!mqttClient.publish(publishNodeStatusJsonTopic, data, true))  //Retain data.
+        Serial.println("Failed to publish JSON sensor data to [" + String(publishNodeStatusJsonTopic) + "]");
       else
-        Serial.print(F("JSON Sensor data published to [")), Serial.print(publishStatusJsonTopic), Serial.println("] ");
+        Serial.println("JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
 
       // // Publish with retained messages
       // String strOutputOne = String(outputOnePoweredStatus);
@@ -396,6 +403,40 @@ void mqttPublishData(bool ignorePublishInterval) {
   }
 }
 
+// MQTT payload
+void mqttcallback(char* topic, byte* payload, unsigned int length) {
+  //If you want to publish a message from within the message callback function, it is necessary to make a copy of the topic and payload values as the client uses the same internal buffer for inbound and outbound messages:
+  //http://www.hivemq.com/blog/mqtt-client-library-encyclopedia-arduino-pubsubclient/
+  Serial.println("Message arrived [" + String(topic) + "] ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+  // Create character buffer with ending null terminator (string)
+  int i = 0;
+  for (i = 0; i < length; i++) {
+    message_buff[i] = payload[i];
+  }
+  message_buff[i] = '\0';
+  // Check the value of the message
+  String msgString = String(message_buff);
+  Serial.println(msgString);
+  // Check the message topic
+  String srtTopic = topic;
+
+  if (srtTopic.equals(subscribeCommandTopic1)) {
+    if (msgString == "1")
+      stateMachine1 = s_Output1Start; // Set output one to be on
+    else if (msgString == "0")
+      stateMachine1 = s_Output1Stop; // Set output one to be off
+    }
+  else if (srtTopic.equals(subscribeCommandTopic2)) {
+    if (msgString == "1")
+      stateMachine2 = s_Output2Start; // Set output one to be on
+     else if (msgString == "0")
+      stateMachine2 = s_Output2Stop; // Set output one to be off
+    }
+}
 
 void controlOutputOne(bool state) {
   if (state == true) {
@@ -450,7 +491,7 @@ void checkState1() {
       Serial.println("State is currently: starting output one");
       // Command the output on.
       controlOutputOne(true);
-      mqttPublishData(true); // Immediate publish cycle
+      mqttPublishStatusData(true); // Immediate publish cycle
       // Start watchdog duration timer.
       watchdogTimeStarted = millis();
       stateMachine1 = s_Output1On;
@@ -468,7 +509,7 @@ void checkState1() {
       Serial.println("State is currently: stopping output one");
       // Command the output off.
       controlOutputOne(false);
-      mqttPublishData(true); // Immediate publish cycle
+      mqttPublishStatusData(true); // Immediate publish cycle
       // Set state mahcine to idle on the next loop
       stateMachine1 = s_idle1;
       break;
@@ -488,7 +529,7 @@ void checkState2() {
       Serial.println("State is currently: starting output two");
       // Command the output on.
       controlOutputTwo(true);
-      mqttPublishData(true); // Immediate publish cycle
+      mqttPublishStatusData(true); // Immediate publish cycle
       // Start watchdog duration timer.
       watchdogTimeStarted = millis();
       stateMachine2 = s_Output2On;
@@ -506,7 +547,7 @@ void checkState2() {
       Serial.println("State is currently: stopping output two");
       // Command the output off.
       controlOutputTwo(false);
-      mqttPublishData(true); // Immediate publish cycle
+      mqttPublishStatusData(true); // Immediate publish cycle
       // Set state mahcine to idle on the next loop
       stateMachine2 = s_idle2;
       break;
@@ -515,7 +556,7 @@ void checkState2() {
 
 // Standard setup shared across programs.
 void standardSetup() {
-    // Set serial speed
+  // Set serial speed
   Serial.begin(115200);
   Serial.println("Setup Starting");
   // Call on the background functions to allow them to do their thing
@@ -546,7 +587,6 @@ void customSetup() {
   // Initialize pins
   pinMode(DIGITAL_PIN_RELAY_ONE, OUTPUT);
   pinMode(DIGITAL_PIN_RELAY_TWO, OUTPUT);
-
   // Initialize pin start values
   digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
   digitalWrite(DIGITAL_PIN_RELAY_TWO, HIGH);
@@ -561,10 +601,26 @@ void customSetup() {
   Serial.print(F("Sensor Firmware version: ")), Serial.println(soilSensor.getVersion(), HEX);
 }
 
+// Custom loop for this program.
+void customLoop() {
+  // Call on the background functions to allow them to do their thing.
+  yield();
+  // Check the status and do actions
+  checkState1();
+  checkState2();
+}
+
 void setup() {
   // Set serial speed
   Serial.begin(115200);
   Serial.println("Setup Starting");
+  // Initialize pins
+  pinMode(DIGITAL_PIN_LED_NODEMCU, OUTPUT);
+  pinMode(DIGITAL_PIN_LED_ESP, OUTPUT);
+  // Initialize pin start values
+  digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on HIGH
+  digitalWrite(DIGITAL_PIN_LED_ESP, HIGH); // Lights on LOW
+
   // Call on the background functions to allow them to do their thing
   yield();
   // Setup wifi
@@ -573,32 +629,18 @@ void setup() {
   yield();
   // Setup OTA updates.
   setup_OTA();
-
-  // Initialize pins
-  pinMode(DIGITAL_PIN_LED_NODEMCU, OUTPUT);
-  pinMode(DIGITAL_PIN_LED_ESP, OUTPUT);
-  // Initialize pin start values
-  digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on HIGH
-  digitalWrite(DIGITAL_PIN_LED_ESP, HIGH); // Lights on LOW
+  // Call on the background functions to allow them to do their thing
+  yield();
 
   // Set MQTT settings
   mqttClient.setServer(mqtt_server, 1883);
   mqttClient.setCallback(mqttcallback);
+
   // Call on the background functions to allow them to do their thing
   yield();
-
-  // Loop for this project.
+  // Setup for this project.
   customSetup();
   Serial.println("Setup Complete");
-}
-
-// Custom loop for this program.
-void customLoop(){
-  // Call on the background functions to allow them to do their thing.
-  yield();
-  // Check the status and do actions
-  checkState1();
-  checkState2();
 }
 
 // Main working loop
@@ -609,14 +651,12 @@ void loop() {
   ArduinoOTA.handle();
   // Call on the background functions to allow them to do their thing.
   yield();
-  // First check if we are connected to the MQTT broker
+  // Check if we are connected to the MQTT broker
   checkMqttConnection();
   // Publish MQTT
-  mqttPublishData(false); // Normal publish cycle
+  mqttPublishStatusData(false); // Normal publish cycle
   // Call on the background functions to allow them to do their thing.
   yield();
-  // Check for Over The Air updates
-  ArduinoOTA.handle();
   // Deal with millis rollover, hack by resetting the esp every 48 days
   if (millis() > 4147200000)
     ESP.restart();
