@@ -90,7 +90,7 @@ const char* publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic;  // 
 const char* publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic;  // Health of the node
 // MQTT publish frequency
 unsigned long previousMillis = 0;
-const long publishInterval = 30000; // Publish frequency in milliseconds 60000 = 1 min
+const long publishInterval = 60000; // Publish frequency in milliseconds 60000 = 1 min
 
 // LED output parameters
 const int DIGITAL_PIN_LED_ESP = 2; // Define LED on ESP8266 sub-modual
@@ -343,11 +343,11 @@ void readSoilSensor() {
   if (!soilSensor.isBusy()) { // Only progress if the sensor is not busy
     // Read Soil Sensor Capacitance
     soilSensorCapacitance = soilSensor.getCapacitance(); //read capacitance register
-    Serial.print(F("Soil Moisture Capacitance: ")), Serial.println(soilSensorCapacitance);
+    Serial.println("Soil Moisture Capacitance: " + String(soilSensorCapacitance));
 
     // Read Soil Sensor Temperature
     soilSensorTemperature = soilSensor.getTemperature() / (float)10; // The returned value is in degrees Celsius with factor 10, so need to divide by 10 to get real value
-    Serial.print(F("Soil Temperature: ")), Serial.println(soilSensorCapacitance);
+    Serial.println("Soil Temperature: "+ String(soilSensorCapacitance));
 
     // Serial.print(", Light: "); // omitted as it has a 3 second delay, alt: call startMeasureLight then read 3 seconds later.
     // Serial.println(sensor.getLight(true)); //request light measurement, wait and read light register
@@ -386,19 +386,6 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
         Serial.println("Failed to publish JSON sensor data to [" + String(publishNodeStatusJsonTopic) + "]");
       else
         Serial.println("JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
-
-      // // Publish with retained messages
-      // String strOutputOne = String(outputOnePoweredStatus);
-      // if (!mqttClient.publish(publishStateTopic1, strOutputOne.c_str(), true))
-      //   Serial.print(F("Failed to output state one to [")), Serial.print(strOutputOne), Serial.print("] ");
-      // else
-      //   Serial.print(F("Output one state published to [")), Serial.print(strOutputOne), Serial.println("] ");
-      //
-      // String strOutputTwo = String(outputTwoPoweredStatus);
-      // if (!mqttClient.publish(publishStateTopic2, strOutputTwo.c_str(), true))
-      //   Serial.print(F("Failed to output state two to [")), Serial.print(strOutputTwo), Serial.print("] ");
-      // else
-      //   Serial.print(F("Output two state published to [")), Serial.print(strOutputTwo), Serial.println("] ");
     }
   }
 }
