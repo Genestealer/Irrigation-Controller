@@ -541,34 +541,6 @@ void checkState2() {
   }
 }
 
-// Standard setup shared across programs.
-void standardSetup() {
-  // Set serial speed
-  Serial.begin(115200);
-  Serial.println("Setup Starting");
-  // Call on the background functions to allow them to do their thing
-  yield();
-  // Setup wifi
-  setup_wifi();
-  // Call on the background functions to allow them to do their thing
-  yield();
-  // Setup OTA updates.
-  setup_OTA();
-
-  // Initialize pins
-  pinMode(DIGITAL_PIN_LED_NODEMCU, OUTPUT);
-  pinMode(DIGITAL_PIN_LED_ESP, OUTPUT);
-  // Initialize pin start values
-  digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on HIGH
-  digitalWrite(DIGITAL_PIN_LED_ESP, HIGH); // Lights on LOW
-
-  // Set MQTT settings
-  mqttClient.setServer(mqtt_server, 1883);
-  mqttClient.setCallback(mqttcallback);
-  // Call on the background functions to allow them to do their thing
-  yield();
-}
-
 // Custom setup for this program.
 void customSetup() {
   // Initialize pins
