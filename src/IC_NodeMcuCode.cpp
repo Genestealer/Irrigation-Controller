@@ -13,7 +13,7 @@
   ESP8266mDNS.h           https://github.com/esp8266/Arduino/tree/master/libraries/ESP8266mDNS
   WiFiUdp.h               https://github.com/esp8266/Arduino
   ArduinoOTA.h            https://github.com/esp8266/Arduino
-  ArduinoJson.h           https://bblanchon.github.io/ArduinoJson/
+  ArduinoJson.h           https://bblanchon.github.io/ArduinoJson/ BUT ONLY UP TO VERSION 5!
   I2CSoilMoistureSensor.h https://github.com/Apollon77/I2CSoilMoistureSensor
   ----------
   GUI: Locally hosted home assistant
@@ -157,7 +157,7 @@ void setup_wifi() {
     Serial.println("WiFi connected");
 
     Serial.printf("RSSI: %d dBm\n", WiFi.RSSI());
-    Serial.println("IP address: " + String(WiFi.localIP()));
+    Serial.println("IP address: " + WiFi.localIP());
     Serial.printf("Hostname: %s\n", WiFi.hostname().c_str());
 
     digitalWrite(DIGITAL_PIN_LED_NODEMCU, LOW); // Lights on LOW. Light the NodeMCU LED to show wifi connection.
