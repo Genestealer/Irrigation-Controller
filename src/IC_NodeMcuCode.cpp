@@ -90,7 +90,7 @@ const char* publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic;  // 
 const char* publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic;  // Health of the node
 // MQTT publish frequency
 unsigned long previousMillis = 0;
-const long publishInterval = 60000; // Publish frequency in milliseconds 60000 = 1 min
+const long publishInterval = 6000; // Publish frequency in milliseconds 60000 = 1 min
 
 // LED output parameters
 const int DIGITAL_PIN_LED_ESP = 2; // Define LED on ESP8266 sub-modual
@@ -345,12 +345,13 @@ void readSoilSensor() {
     soilSensorCapacitance = soilSensor.getCapacitance(); //read capacitance register
     Serial.println("Soil Moisture Capacitance: " + String(soilSensorCapacitance));
 
-    // Read Soil Sensor Temperature
-    soilSensorTemperature = soilSensor.getTemperature() / (float)10; // The returned value is in degrees Celsius with factor 10, so need to divide by 10 to get real value
-    Serial.println("Soil Temperature: "+ String(soilSensorCapacitance));
+    // // Read Soil Sensor Temperature
+    // soilSensorTemperature = soilSensor.getTemperature() / (float)10; // The returned value is in degrees Celsius with factor 10, so need to divide by 10 to get real value
+    // Serial.println("Soil Temperature: "+ String(soilSensorTemperature));
 
     // Serial.print(", Light: "); // omitted as it has a 3 second delay, alt: call startMeasureLight then read 3 seconds later.
     // Serial.println(sensor.getLight(true)); //request light measurement, wait and read light register
+
   }
 }
 
@@ -552,8 +553,8 @@ void customSetup() {
 
   // Set I2C for soil sensor
   Wire.begin();
-  Wire.setClockStretchLimit(2500); // Ensure I2C timing works on ESP8266 https://github.com/Apollon77/I2CSoilMoistureSensor/issues/8
-  soilSensor.begin(); // Reset soil sensor, assumes we give it at least 1 second before talking to it.
+  Wire.setClockStretchLimit(5000); // Ensure I2C timing works on ESP8266 https://github.com/Apollon77/I2CSoilMoistureSensor/issues/8
+  soilSensor.begin(true, true); // Reset soil sensor, assumes we give it at least 1 second before talking to it.
 
   // Talk to soil sensor
   Serial.print(F("I2C Soil Moisture Sensor Address: ")), Serial.println(soilSensor.getAddress(), HEX);
